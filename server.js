@@ -744,3 +744,20 @@ wss.on('connection', (ws, req) => {
         }
         state.currentTurnIndex++;
         broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.`
+          // WEBSOCKET (DEVAM)
+        broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.` });
+        scheduleNextTurn(tableId);
+      }
+    });
+  } catch (error) {
+    console.log('❌ WebSocket hatası:', error);
+  }
+});
+
+// SERVER BAŞLAT
+server.listen(PORT, () => {
+  console.log(`🃏 Blackjack server → http://localhost:${PORT}`);
+  console.log(`📡 WebSocket → ws://localhost:${PORT}`);
+  console.log(`🔧 Mod: ${IS_DEV ? 'Geliştirme' : 'Production'}`);
+  console.log(`✅ Sunucu hazır!`);
+});
