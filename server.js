@@ -15,6 +15,10 @@ const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const PORT = process.env.PORT || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
+console.log(`🚀 Sunucu başlatılıyor...`);
+console.log(`📌 Port: ${PORT}`);
+console.log(`🔧 Mod: ${IS_DEV ? 'Geliştirme' : 'Production'}`);
+
 // DATABASE
 const db = new Database('blackjack.db');
 db.exec(`
@@ -60,6 +64,8 @@ db.exec(`
   );
 `);
 
+console.log('✅ Veritabanı hazır');
+
 // WebSocket bağlantıları
 const ws_clients = new Map();
 
@@ -98,23 +104,26 @@ function verifyInitData(initData) {
     if (Date.now() / 1000 - authDate > 3600) return null;
 
     return JSON.parse(params.get('user') || 'null');
-  } catch { return null; }
+  } catch (e) {
+    console.log('❌ initData doğrulama hatası:', e.message);
+    return null;
+  }
 }
 
 // DB helpers
 const q = {
-  getUser: tid => db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(String(tid)),
-  getTable: id => db.prepare('SELECT * FROM tables WHERE id = ?').get(id),
-  getTableByName: name => db.prepare('SELECT * FROM tables WHERE name = ?').get(name),
-  getActivePlayers: tid => db.prepare('SELECT * FROM players WHERE table_id = ? AND active = 1').all(tid),
+  getUser: (tid) => db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(String(tid)),
+  getTable: (id) => db.prepare('SELECT * FROM tables WHERE id = ?').get(id),
+  getTableByName: (name) => db.prepare('SELECT * FROM tables WHERE name = ?').get(name),
+  getActivePlayers: (tid) => db.prepare('SELECT * FROM players WHERE table_id = ? AND active = 1').all(tid),
   getPlayerAt: (tableId, tid) => db.prepare('SELECT * FROM players WHERE table_id = ? AND telegram_id = ?').get(tableId, String(tid)),
-  getCurrentHand: tableId => db.prepare("SELECT * FROM hands WHERE table_id = ? AND status != 'done' ORDER BY id DESC LIMIT 1").get(tableId),
+  getCurrentHand: (tableId) => db.prepare("SELECT * FROM hands WHERE table_id = ? AND status != 'done' ORDER BY id DESC LIMIT 1").get(tableId),
   getPlayerHand: (handId, playerId) => db.prepare('SELECT * FROM player_hands WHERE hand_id = ? AND player_id = ?').get(handId, playerId),
-  displayName: tid => {
+  displayName: (tid) => {
     const u = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(String(tid));
     return u ? (u.username ? `@${u.username}` : u.first_name) : String(tid);
   },
-  ensureUser: tgUser => {
+  ensureUser: (tgUser) => {
     db.prepare('INSERT OR IGNORE INTO users (telegram_id, username, first_name) VALUES (?,?,?)')
       .run(String(tgUser.id), tgUser.username || '', tgUser.first_name || '');
     return q.getUser(tgUser.id);
@@ -497,32 +506,56 @@ function endGame(tableId) {
 // MIDDLEWARE
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public'))); // public klasörünü serve et
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Auth middleware
+// AUTH MIDDLEWARE - GÜNCELLENMİŞ VERSİYON
 function authMiddleware(req, res, next) {
-  if (IS_DEV && req.headers['x-dev-user-id']) {
+  console.log('🔐 Auth middleware çalıştı');
+  console.log('📥 Headers:', req.headers);
+  
+  // GELİŞTİRME MODUNDA HER ZAMAN TEST KULLANICISI
+  if (IS_DEV) {
+    console.log('🔓 Geliştirme modu - test kullanıcısı oluşturuluyor');
+    
+    // Header'dan ID al veya rastgele oluştur
+    let userId = req.headers['x-dev-user-id'];
+    if (!userId) {
+      userId = Math.floor(Math.random() * 10000).toString();
+      console.log('🎲 Rastgele kullanıcı ID:', userId);
+    }
+    
     const tgUser = {
-      id: parseInt(req.headers['x-dev-user-id']),
-      first_name: req.headers['x-dev-name'] || 'DevUser',
-      username: req.headers['x-dev-username'] || 'devuser',
+      id: userId,
+      first_name: req.headers['x-dev-name'] || 'TestUser',
+      username: req.headers['x-dev-username'] || 'testuser',
     };
+    
     q.ensureUser(tgUser);
     req.tgUser = tgUser;
+    console.log('✅ Test kullanıcısı hazır:', tgUser);
     return next();
   }
 
+  // PRODUCTION - GERÇEK TELEGRAM KONTROLÜ
   const initData = req.headers['x-telegram-init-data'];
-  if (!initData) return res.status(401).json({ error: 'initData eksik' });
+  if (!initData) {
+    console.log('❌ initData eksik');
+    return res.status(401).json({ error: 'initData eksik' });
+  }
 
   const user = verifyInitData(initData);
-  if (!user) return res.status(403).json({ error: 'Geçersiz initData' });
+  if (!user) {
+    console.log('❌ Geçersiz initData');
+    return res.status(403).json({ error: 'Geçersiz initData' });
+  }
 
   q.ensureUser(user);
   req.tgUser = user;
+  console.log('✅ Gerçek kullanıcı:', user.id);
   next();
 }
 
+// API'lere auth middleware'i uygula
 app.use('/api', authMiddleware);
 
 // API ENDPOINTS
@@ -531,14 +564,19 @@ app.get('/api/me', (req, res) => {
 });
 
 app.get('/api/tables', (req, res) => {
-  const tables = db.prepare(`
-    SELECT t.*, COUNT(p.id) as player_count
-    FROM tables t
-    LEFT JOIN players p ON t.id = p.table_id AND p.active = 1
-    WHERE t.status != 'ended'
-    GROUP BY t.id
-  `).all().map(t => ({ ...t, password: !!t.password }));
-  res.json({ tables });
+  try {
+    const tables = db.prepare(`
+      SELECT t.*, COUNT(p.id) as player_count
+      FROM tables t
+      LEFT JOIN players p ON t.id = p.table_id AND p.active = 1
+      WHERE t.status != 'ended'
+      GROUP BY t.id
+    `).all().map(t => ({ ...t, password: !!t.password }));
+    res.json({ tables });
+  } catch (error) {
+    console.log('❌ Tablo listesi hatası:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/api/tables', (req, res) => {
@@ -649,7 +687,7 @@ app.post('/api/tables/:id/continue', (req, res) => {
   res.json(voteContinue(tableId, tid, req.body.vote));
 });
 
-// SINGLE PAGE APP YÖNLENDİRME (BUNU EKLE!)
+// SINGLE PAGE APP YÖNLENDİRME
 app.get('*', (req, res) => {
   if (req.url.startsWith('/api/')) return;
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -657,55 +695,52 @@ app.get('*', (req, res) => {
 
 // WEBSOCKET
 wss.on('connection', (ws, req) => {
-  const url = new URL(req.url, 'http://localhost');
-  const initData = url.searchParams.get('initData');
-  const devId = url.searchParams.get('devUserId');
+  console.log('🔌 Yeni WebSocket bağlantısı');
+  
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const initData = url.searchParams.get('initData');
+    const devId = url.searchParams.get('devUserId');
 
-  let tgUser = null;
-  if (IS_DEV && devId) {
-    tgUser = { id: parseInt(devId), first_name: 'DevUser', username: 'devuser' };
-    q.ensureUser(tgUser);
-  } else {
-    tgUser = verifyInitData(initData);
-    if (!tgUser) {
-      ws.send(JSON.stringify({ type: 'ERROR', message: 'Kimlik doğrulaması başarısız' }));
-      return ws.close();
-    }
-    q.ensureUser(tgUser);
-  }
-
-  const tid = String(tgUser.id);
-  ws_clients.set(tid, ws);
-  ws.send(JSON.stringify({ type: 'CONNECTED', userId: tid }));
-
-  const active = db.prepare('SELECT * FROM players WHERE telegram_id = ? AND active = 1').get(tid);
-  if (active) setTimeout(() => pushTableState(active.table_id), 100);
-
-  ws.on('close', () => {
-    ws_clients.delete(tid);
-
-    const player = db.prepare('SELECT * FROM players WHERE telegram_id = ? AND active = 1').get(tid);
-    if (!player) return;
-
-    const tableId = player.table_id;
-    const state = gameState[tableId];
-    if (state?.turnOrder?.[state.currentTurnIndex] === tid) {
-      if (state.turnTimer) { clearTimeout(state.turnTimer); state.turnTimer = null; }
-      const hand = q.getCurrentHand(tableId);
-      if (hand) {
-        const ph = q.getPlayerHand(hand.id, player.id);
-        if (ph) db.prepare('UPDATE player_hands SET stood = 1, busted = 1 WHERE id = ?').run(ph.id);
+    let tgUser = null;
+    if (IS_DEV && devId) {
+      tgUser = { id: parseInt(devId), first_name: 'DevUser', username: 'devuser' };
+      q.ensureUser(tgUser);
+    } else if (IS_DEV) {
+      tgUser = { id: Math.floor(Math.random() * 10000), first_name: 'TestUser', username: 'testuser' };
+      q.ensureUser(tgUser);
+    } else {
+      tgUser = verifyInitData(initData);
+      if (!tgUser) {
+        ws.send(JSON.stringify({ type: 'ERROR', message: 'Kimlik doğrulaması başarısız' }));
+        return ws.close();
       }
-      state.currentTurnIndex++;
-      broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.` });
-      scheduleNextTurn(tableId);
+      q.ensureUser(tgUser);
     }
-  });
-});
 
-// SERVER BAŞLAT
-server.listen(PORT, () => {
-  console.log(`🃏 Blackjack server → http://localhost:${PORT}`);
-  console.log(`📡 WebSocket → ws://localhost:${PORT}`);
-  if (IS_DEV) console.log(`🛠 Dev modu: initData bypass aktif`);
-});
+    const tid = String(tgUser.id);
+    ws_clients.set(tid, ws);
+    ws.send(JSON.stringify({ type: 'CONNECTED', userId: tid }));
+    console.log(`✅ WebSocket bağlandı - Kullanıcı: ${tid}`);
+
+    const active = db.prepare('SELECT * FROM players WHERE telegram_id = ? AND active = 1').get(tid);
+    if (active) setTimeout(() => pushTableState(active.table_id), 100);
+
+    ws.on('close', () => {
+      console.log(`🔌 WebSocket kapandı - Kullanıcı: ${tid}`);
+      ws_clients.delete(tid);
+
+      const player = db.prepare('SELECT * FROM players WHERE telegram_id = ? AND active = 1').get(tid);
+      if (!player) return;
+
+      const tableId = player.table_id;
+      const state = gameState[tableId];
+      if (state?.turnOrder?.[state.currentTurnIndex] === tid) {
+        if (state.turnTimer) { clearTimeout(state.turnTimer); state.turnTimer = null; }
+        const hand = q.getCurrentHand(tableId);
+        if (hand) {
+          const ph = q.getPlayerHand(hand.id, player.id);
+          if (ph) db.prepare('UPDATE player_hands SET stood = 1, busted = 1 WHERE id = ?').run(ph.id);
+        }
+        state.currentTurnIndex++;
+        broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.`
