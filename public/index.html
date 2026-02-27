@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🃏 Blackjack</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --border:  #30363d;
+    --accent:  #238636;
+    --danger:  #da3633;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --gold:    #f0a500;
+    --card-bg: #ffffff;
+    --green:   #145a32;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── LAYOUT ── */
+  #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  .screen { display: none; flex-direction: column; flex: 1; padding: 16px; }
+  .screen.active { display: flex; }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; }
+  .balance-badge {
+    background: var(--green);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .1s, opacity .1s;
+    width: 100%;
+  }
+  .btn:active { transform: scale(.97); opacity: .85; }
+  .btn-primary  { background: var(--accent);  color: #fff; }
+  .btn-danger   { background: var(--danger);  color: #fff; }
+  .btn-muted    { background: var(--border);  color: var(--text); }
+  .btn-gold     { background: var(--gold);    color: #000; }
+  .btn-sm       { padding: 8px 14px; font-size: 13px; width: auto; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  /* ── PLAYING CARD ── */
+  .playing-card {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 68px;
+    background: var(--card-bg);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #222;
+    margin: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    border: 1px solid #ddd;
+    flex-shrink: 0;
+  }
+  .playing-card.red { color: #c0392b; }
+  .playing-card.back {
+    background: linear-gradient(135deg, #1a237e, #283593);
+    color: transparent;
+    font-size: 24px;
+  }
+  .playing-card.back::after { content: '🂠'; color: rgba(255,255,255,.3); }
+
+  .cards-row { display: flex; flex-wrap: wrap; margin: 8px 0; }
+
+  /* ── INPUT ── */
+  .input-group { margin-bottom: 12px; }
+  .input-group label { font-size: 13px; color: var(--muted); margin-bottom: 6px; display: block; }
+  .input-group input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .input-group input:focus { outline: none; border-color: var(--accent); }
+
+  /* ── TABLE LIST ── */
+  .table-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .table-item:hover { border-color: var(--accent); }
+  .table-item-name  { font-weight: 600; font-size: 15px; }
+  .table-item-meta  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .table-item-right { text-align: right; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-green  { background: #145a32; color: #58d68d; }
+  .badge-orange { background: #7d6608; color: #f9e79f; }
+  .badge-red    { background: #641e16; color: #f1948a; }
+
+  /* ── GAME TABLE ── */
+  .game-felt {
+    background: radial-gradient(ellipse at 50% 40%, #1a5c2a 0%, #0d3317 100%);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 2px solid #1e8449;
+  }
+
+  .player-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: rgba(0,0,0,.25);
+  }
+  .player-row.my-turn { background: rgba(35,134,54,.25); border: 1px solid var(--accent); }
+  .player-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .player-info { flex: 1; }
+  .player-name { font-size: 14px; font-weight: 600; }
+  .player-chips { font-size: 12px; color: var(--muted); }
+  .card-count-dots { display: flex; gap: 3px; }
+  .card-dot {
+    width: 10px;
+    height: 14px;
+    background: var(--card-bg);
+    border-radius: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.5);
+  }
+
+  /* ── MY HAND ── */
+  .my-hand-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .hand-value {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--gold);
+    text-align: center;
+    margin: 6px 0;
+  }
+  .hand-value.busted { color: var(--danger); }
+
+  /* ── ACTION BUTTONS ── */
+  .action-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .action-row .btn { flex: 1; }
+
+  /* ── POT DISPLAY ── */
+  .pot-display {
+    text-align: center;
+    padding: 10px;
+    background: rgba(240,165,0,.1);
+    border: 1px solid var(--gold);
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .pot-amount { font-size: 24px; font-weight: 800; color: var(--gold); }
+  .pot-label  { font-size: 12px; color: var(--muted); }
+
+  /* ── NOTIFICATION TOAST ── */
+  #toast-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+    width: 90%;
+    max-width: 360px;
+  }
+  .toast {
+    background: rgba(30,30,30,.95);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: center;
+    animation: slideUp .3s ease;
+    backdrop-filter: blur(10px);
+    width: 100%;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  /* ── RESULT OVERLAY ── */
+  #result-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.8);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #result-overlay.show { display: flex; }
+  .result-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 380px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .result-title { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 16px; }
+  .result-player { margin-bottom: 12px; padding: 10px; border-radius: 8px; background: var(--bg); }
+  .result-player.winner { border: 1px solid var(--gold); }
+  .result-player-name { font-weight: 600; margin-bottom: 4px; }
+
+  /* ── MODAL ── */
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 400;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+  #modal-overlay.show { display: flex; }
+  .modal-box {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px 36px;
+    width: 100%;
+    max-width: 480px;
+  }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-close {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  /* ── TURN TIMER ── */
+  .turn-timer {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .turn-timer-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 1s linear, background .3s;
+  }
+
+  /* ── BET SLIDER ── */
+  .bet-slider {
+    width: 100%;
+    accent-color: var(--gold);
+    margin: 8px 0;
+    height: 6px;
+  }
+  .bet-display {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--gold);
+    margin: 8px 0;
+  }
+
+  /* ── CHIP PRESETS ── */
+  .chip-presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .chip-btn {
+    flex: 1;
+    min-width: 50px;
+    padding: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .15s;
+  }
+  .chip-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* ── EMPTY / LOADING ── */
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .spinner {
+    width: 24px; height: 24px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    margin: 20px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .text-muted  { color: var(--muted); font-size: 13px; }
+  .text-center { text-align: center; }
+  .mt-8  { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .gap-8 { display: flex; flex-direction: column; gap: 8px; }
+  .row   { display: flex; gap: 10px; }
+  .row .btn { flex: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <h1 id="header-title">🃏 Blackjack</h1>
+    <div id="header-balance" class="balance-badge" style="display:none">💰 0</div>
+  </div>
+
+  <!-- ══ EKRAN 1: MASA LİSTESİ ══ -->
+  <div id="screen-lobby" class="screen active">
+    <div id="tables-list" style="margin-top:8px;flex:1;">
+      <div class="spinner"></div>
+    </div>
+    <div style="margin-top:auto;padding-top:12px;">
+      <button class="btn btn-primary" onclick="openCreateModal()">➕ Masa Aç</button>
+    </div>
+  </div>
+
+  <!-- ══ EKRAN 2: BEKLEME ODASI ══ -->
+  <div id="screen-waiting" class="screen">
+    <div class="card">
+      <div style="font-size:18px;font-weight:700;" id="waiting-table-name">—</div>
+      <div class="text-muted mt-8" id="waiting-info">Oyuncular bekleniyor...</div>
+    </div>
+    <div id="waiting-players" class="gap-8" style="flex:1"></div>
+    <div id="waiting-actions" style="margin-top:auto;" class="gap-8">
+      <button id="btn-start" class="btn btn-primary" style="display:none" onclick="startGame()">🎮 Oyunu Başlat</button>
+      <button class="btn btn-muted" onclick="leaveTable()">👋 Masadan Ayrıl</button>
+    </div>
+  </div>
+
+  <!-- ══ EKRAN 3: OYUN ══ -->
+  <div id="screen-game" class="screen" style="padding:10px;">
+    <!-- Pot -->
+    <div class="pot-display">
+      <div class="pot-label">🏆 POT</div>
+      <div class="pot-amount" id="game-pot">0</div>
+      <div class="pot-label" id="game-accum" style="display:none"></div>
+    </div>
+
+    <!-- Turn timer -->
+    <div class="turn-timer"><div class="turn-timer-bar" id="timer-bar" style="width:100%"></div></div>
+    <div class="text-muted text-center" id="turn-label" style="margin-bottom:8px;font-size:13px;">—</div>
+
+    <!-- Diğer oyuncular -->
+    <div class="game-felt">
+      <div id="other-players"></div>
+    </div>
+
+    <!-- Benim elim -->
+    <div class="my-hand-section">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px;">Senin Elin</div>
+      <div class="cards-row" id="my-cards"></div>
+      <div class="hand-value" id="my-value">0</div>
+    </div>
+
+    <!-- Aksiyonlar -->
+    <div id="action-bet" style="display:none">
+      <div class="text-muted text-center" style="margin-bottom:8px">💰 Bahsini seç</div>
+      <div class="bet-display" id="bet-display">10</div>
+      <input type="range" class="bet-slider" id="bet-slider" min="10" max="100" value="10" step="5"
+        oninput="updateBetDisplay(this.value)">
+      <div class="chip-presets" id="chip-presets"></div>
+      <button class="btn btn-gold mt-8" onclick="placeBet()">✅ Bahsi Onayla</button>
+    </div>
+
+    <div id="action-play" style="display:none">
+      <div class="action-row">
+        <button class="btn btn-primary" onclick="doHit()">🃏 HIT</button>
+        <button class="btn btn-danger" onclick="doStand()">✋ STAND</button>
+      </div>
+    </div>
+
+    <div id="action-waiting-turn" style="display:none">
+      <div class="card text-center text-muted" style="padding:14px;">
+        ⏳ <span id="whose-turn">—</span> oynuyor...
+      </div>
+    </div>
+
+    <div id="action-continue" style="display:none">
+      <div class="text-muted text-center" style="margin-bottom:8px">Tekrar oynamak istiyor musun?</div>
+      <div class="action-row">
+        <button class="btn btn-primary" onclick="voteContinue('continue')">🟢 DEVAM</button>
+        <button class="btn btn-danger"  onclick="voteContinue('leave')">🔴 TAMAM</button>
+      </div>
+    </div>
+
+    <div style="margin-top:8px;">
+      <button class="btn btn-muted btn-sm" onclick="leaveTable()">← Çıkış</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<!-- RESULT OVERLAY -->
+<div id="result-overlay">
+  <div class="result-box">
+    <div class="result-title" id="result-title">El Sonucu</div>
+    <div id="result-players"></div>
+    <button class="btn btn-muted mt-12" onclick="closeResult()">Kapat</button>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div class="modal-title" id="modal-title">Masa Aç</div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  TELEGRAM MINI APP INIT
+// ══════════════════════════════════════════════════════════════════
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#161b22');
+}
+
+// initData → her API isteğinde header olarak gönderilir
+const INIT_DATA = tg?.initData || '';
+const IS_DEV    = !INIT_DATA; // Tarayıcıdan açılıyorsa dev mode
+
+// Dev modda sahte kullanıcı ID
+const DEV_USER_ID  = '12345';
+const DEV_USER_NAME = 'DevUser';
+
+// ══════════════════════════════════════════════════════════════════
+//  WEBSOCKET
+// ══════════════════════════════════════════════════════════════════
+let ws     = null;
+let wsRetry = 0;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url   = IS_DEV
+    ? `${proto}//${location.host}?devUserId=${DEV_USER_ID}`
+    : `${proto}//${location.host}?initData=${encodeURIComponent(INIT_DATA)}`;
+
+  ws = new WebSocket(url);
+
+  ws.onopen    = ()    => { wsRetry = 0; console.log('WS bağlandı'); };
+  ws.onmessage = (e)   => handleWS(JSON.parse(e.data));
+  ws.onclose   = ()    => {
+    const delay = Math.min(1000 * 2 ** wsRetry++, 15000);
+    setTimeout(connectWS, delay);
+  };
+  ws.onerror = ()    => ws.close();
+}
+
+function handleWS(msg) {
+  switch (msg.type) {
+
+    case 'STATE_UPDATE':
+      applyState(msg.data);
+      break;
+
+    case 'HAND_RESULT':
+      showResult(msg);
+      break;
+
+    case 'NOTIFY':
+      showToast(msg.message);
+      break;
+
+    case 'ASK_CONTINUE':
+      showContinueUI();
+      break;
+
+    case 'KICKED':
+      showToast(msg.message || '💸 Masadan atıldın!');
+      setTimeout(() => goToLobby(), 2000);
+      break;
+
+    case 'LEFT_TABLE':
+      goToLobby();
+      break;
+
+    case 'GAME_ENDED':
+      showToast(msg.message || '🏁 Oyun bitti!');
+      setTimeout(() => goToLobby(), 2500);
+      break;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  STATE YÖNETİMİ
+// ══════════════════════════════════════════════════════════════════
+let currentState  = null;
+let currentTableId = null;
+let timerInterval  = null;
+let timerSeconds   = 15;
+
+function applyState(data) {
+  currentState   = data;
+  currentTableId = data.tableId;
+
+  // Header balance güncelle
+  document.getElementById('header-balance').style.display = '';
+  document.getElementById('header-balance').textContent   = `💰 ${data.myChips}`;
+
+  // Hangi ekranda olacağımızı belirle
+  if (data.tableStatus === 'waiting') {
+    showWaitingRoom(data);
+  } else {
+    showGame(data);
+  }
+}
+
+// ─── Bekleme Odası ─────────────────────────────────────────────────
+function showWaitingRoom(data) {
+  showScreen('waiting');
+  document.getElementById('header-title').textContent     = '⏳ Bekleme';
+  document.getElementById('waiting-table-name').textContent = data.tableName;
+
+  const allPlayers = [
+    { telegram_id: 'me', name: 'Sen', chips: data.myChips },
+    ...data.others
+  ];
+  document.getElementById('waiting-info').textContent =
+    `${allPlayers.length}/8 oyuncu • ${data.myChips} chip`;
+
+  const cont = document.getElementById('waiting-players');
+  cont.innerHTML = allPlayers.map(p => `
+    <div class="card" style="padding:10px;display:flex;align-items:center;gap:10px;">
+      <div class="player-avatar">👤</div>
+      <div>
+        <div style="font-weight:600">${p.name}${p.telegram_id === 'me' ? ' (Sen)' : ''}</div>
+        <div class="text-muted">${p.chips} chip</div>
+      </div>
+      ${data.isCreator && p.telegram_id !== 'me' ? '' : ''}
+    </div>
+  `).join('');
+
+  const btnStart = document.getElementById('btn-start');
+  btnStart.style.display = data.isCreator ? '' : 'none';
+}
+
+// ─── Oyun Ekranı ────────────────────────────────────────────────────
+let lastIsMyTurn = false;
+
+function showGame(data) {
+  showScreen('game');
+  document.getElementById('header-title').textContent = `🃏 ${data.tableName}`;
+
+  // Pot
+  document.getElementById('game-pot').textContent = `${data.pot} chip`;
+  const accumEl = document.getElementById('game-accum');
+  if (data.accumulatedPot > 0) {
+    accumEl.style.display = '';
+    accumEl.textContent   = `(+ ${data.accumulatedPot} biriken)`;
+  } else {
+    accumEl.style.display = 'none';
+  }
+
+  // Diğer oyuncular
+  const othersCont = document.getElementById('other-players');
+  if (data.others.length === 0) {
+    othersCont.innerHTML = '<div class="text-muted text-center" style="padding:12px">Diğer oyuncular bekleniyor...</div>';
+  } else {
+    othersCont.innerHTML = data.others.map(p => {
+      const dots = Array(p.cardCount).fill('<div class="card-dot"></div>').join('');
+      const isTheirTurn = data.currentTurnName && p.name === data.currentTurnName;
+      return `
+        <div class="player-row ${isTheirTurn ? 'my-turn' : ''}">
+          <div class="player-avatar">👤</div>
+          <div class="player-info">
+            <div class="player-name">${p.name}${p.stood ? ' ✋' : ''}</div>
+            <div class="player-chips">${p.chips} chip</div>
+          </div>
+          <div class="card-count-dots">${dots}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // Benim kartlarım
+  const myCardsCont = document.getElementById('my-cards');
+  myCardsCont.innerHTML = data.myCards.map(c => {
+    const isRed = ['♥','♦'].includes(c.suit);
+    return `<div class="playing-card ${isRed ? 'red' : ''}">
+      <div>${c.rank}</div><div>${c.suit}</div>
+    </div>`;
+  }).join('');
+
+  const myValEl = document.getElementById('my-value');
+  myValEl.textContent = data.myValue || '—';
+  myValEl.className   = 'hand-value' + (data.myBusted ? ' busted' : '');
+
+  // Aksiyon alanı
+  hideAllActions();
+  document.getElementById('turn-label').textContent = '';
+
+  if (data.handStatus === 'betting' && data.needsBet) {
+    // Bahis fazı
+    showActionBet(data.myChips);
+
+  } else if (data.handStatus === 'playing') {
+    if (data.isMyTurn) {
+      document.getElementById('action-play').style.display = '';
+      document.getElementById('turn-label').textContent    = '🎯 Senin sıran!';
+      // Timer başlat
+      if (!lastIsMyTurn) startTurnTimer();
+    } else {
+      document.getElementById('action-waiting-turn').style.display = '';
+      document.getElementById('whose-turn').textContent = data.currentTurnName || '—';
+      document.getElementById('turn-label').textContent = `⏳ ${data.currentTurnName || '—'} sırası`;
+      stopTurnTimer();
+    }
+  } else if (data.handStatus === 'betting' && !data.needsBet) {
+    document.getElementById('action-waiting-turn').style.display = '';
+    document.getElementById('whose-turn').textContent = 'diğerleri';
+    document.getElementById('turn-label').textContent = '✅ Bahsini yaptın, bekleniyor...';
+  }
+
+  lastIsMyTurn = data.isMyTurn;
+}
+
+function hideAllActions() {
+  ['action-bet','action-play','action-waiting-turn','action-continue'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+}
+
+function showActionBet(maxChips) {
+  const el = document.getElementById('action-bet');
+  el.style.display = '';
+  const slider = document.getElementById('bet-slider');
+  slider.min   = 10;
+  slider.max   = maxChips;
+  slider.value = Math.min(10, maxChips);
+  updateBetDisplay(slider.value);
+
+  // Chip preset butonları
+  const presets = [10, 25, 50, 100, 250].filter(v => v <= maxChips);
+  document.getElementById('chip-presets').innerHTML = presets.map(v =>
+    `<div class="chip-btn" onclick="setBet(${v})">${v}</div>`
+  ).join('');
+}
+
+function updateBetDisplay(val) {
+  document.getElementById('bet-display').textContent = val;
+}
+
+function setBet(val) {
+  const slider = document.getElementById('bet-slider');
+  slider.value = val;
+  updateBetDisplay(val);
+}
+
+// ── Timer ────────────────────────────────────────────────────────────
+function startTurnTimer() {
+  stopTurnTimer();
+  timerSeconds = 15;
+  const bar = document.getElementById('timer-bar');
+  bar.style.width      = '100%';
+  bar.style.background = 'var(--accent)';
+
+  timerInterval = setInterval(() => {
+    timerSeconds--;
+    const pct = (timerSeconds / 15) * 100;
+    bar.style.width      = pct + '%';
+    bar.style.background = timerSeconds <= 5 ? 'var(--danger)' : 'var(--accent)';
+    if (timerSeconds <= 0) stopTurnTimer();
+  }, 1000);
+}
+
+function stopTurnTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  document.getElementById('timer-bar').style.width = '0%';
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  API CALLS
+// ══════════════════════════════════════════════════════════════════
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+
+  if (IS_DEV) {
+    headers['x-dev-user-id']   = DEV_USER_ID;
+    headers['x-dev-name']      = DEV_USER_NAME;
+    headers['x-dev-username']  = 'devuser';
+  } else {
+    headers['x-telegram-init-data'] = INIT_DATA;
+  }
+
+  const res = await fetch(path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json();
+  if (data.error) { showToast('❌ ' + data.error); throw new Error(data.error); }
+  return data;
+}
+
+const GET    = path        => api('GET',  path);
+const POST   = (path, body)=> api('POST', path, body);
+
+// ══════════════════════════════════════════════════════════════════
+//  ACTIONS
+// ══════════════════════════════════════════════════════════════════
+async function loadLobby() {
+  showScreen('lobby');
+  document.getElementById('header-title').textContent = '🃏 Blackjack';
+  document.getElementById('turn-label').textContent   = '';
+
+  try {
+    const { user }   = await GET('/api/me');
+    document.getElementById('header-balance').style.display = '';
+    document.getElementById('header-balance').textContent   = `💰 ${user.balance}`;
+
+    const { tables } = await GET('/api/tables');
+    renderTableList(tables);
+  } catch (e) {
+    document.getElementById('tables-list').innerHTML =
+      '<div class="empty"><div class="empty-icon">⚠️</div>Bağlantı hatası</div>';
+  }
+}
+
+function renderTableList(tables) {
+  const cont = document.getElementById('tables-list');
+  if (!tables?.length) {
+    cont.innerHTML = `<div class="empty">
+      <div class="empty-icon">🃏</div>
+      <div>Henüz masa yok.</div>
+      <div class="text-muted" style="margin-top:4px">İlk masayı sen aç!</div>
+    </div>`;
+    return;
+  }
+
+  cont.innerHTML = tables.map(t => {
+    const statusBadge = t.status === 'playing'
+      ? '<span class="badge badge-orange">⚡ Oyunda</span>'
+      : '<span class="badge badge-green">✅ Açık</span>';
+    return `<div class="table-item" onclick="joinTablePrompt(${t.id}, ${!!t.password})">
+      <div>
+        <div class="table-item-name">${t.password ? '🔒 ' : ''}${t.name}</div>
+        <div class="table-item-meta">${t.player_count}/8 oyuncu • ${t.start_chips} chip giriş</div>
+      </div>
+      <div class="table-item-right">
+        ${statusBadge}
+        <div class="text-muted" style="font-size:11px;margin-top:4px">${t.player_count} kişi</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCreateModal() {
+  document.getElementById('modal-title').textContent = '➕ Yeni Masa';
+  document.getElementById('modal-body').innerHTML    = `
+    <div class="input-group">
+      <label>Masa Adı</label>
+      <input id="inp-name" type="text" placeholder="ör: Arkadaş Masası" maxlength="30">
+    </div>
+    <div class="input-group">
+      <label>Başlangıç Chip (min 10)</label>
+      <input id="inp-chips" type="number" value="100" min="10" max="10000">
+    </div>
+    <div class="input-group">
+      <label>Şifre (opsiyonel)</label>
+      <input id="inp-pass" type="password" placeholder="Boş bırakırsan herkese açık">
+    </div>
+    <button class="btn btn-primary mt-8" onclick="createTable()">✅ Masa Oluştur</button>
+  `;
+  showModal();
+}
+
+async function createTable() {
+  const name        = document.getElementById('inp-name').value.trim();
+  const start_chips = parseInt(document.getElementById('inp-chips').value);
+  const password    = document.getElementById('inp-pass').value || null;
+
+  if (!name) return showToast('❌ Masa adı boş olamaz');
+
+  try {
+    await POST('/api/tables', { name, start_chips, password });
+    closeModal();
+    currentTableId = null;
+    await loadLobby(); // yenile (WS state gelince geçiş yapacak)
+    showToast('✅ Masa oluşturuldu! Yükleniyor...');
+  } catch {}
+}
+
+function joinTablePrompt(tableId, hasPassword) {
+  if (hasPassword) {
+    document.getElementById('modal-title').textContent = '🔒 Şifreli Masa';
+    document.getElementById('modal-body').innerHTML = `
+      <div class="input-group">
+        <label>Masa Şifresi</label>
+        <input id="inp-joinpass" type="password" placeholder="Şifreyi gir">
+      </div>
+      <button class="btn btn-primary" onclick="joinTable(${tableId}, document.getElementById('inp-joinpass').value)">
+        Katıl
+      </button>
+    `;
+    showModal();
+  } else {
+    joinTable(tableId, null);
+  }
+}
+
+async function joinTable(tableId, password) {
+  closeModal();
+  try {
+    await POST(`/api/tables/${tableId}/join`, { password });
+    currentTableId = tableId;
+    showToast('✅ Masaya katıldın!');
+  } catch {}
+}
+
+async function leaveTable() {
+  if (!currentTableId) return goToLobby();
+  try {
+    await POST(`/api/tables/${currentTableId}/leave`);
+  } catch {}
+  goToLobby();
+}
+
+async function startGame() {
+  try {
+    await POST(`/api/tables/${currentTableId}/start`);
+  } catch {}
+}
+
+async function placeBet() {
+  const amount = parseInt(document.getElementById('bet-slider').value);
+  try {
+    await POST(`/api/tables/${currentTableId}/bet`, { amount });
+    hideAllActions();
+    document.getElementById('action-waiting-turn').style.display = '';
+    document.getElementById('whose-turn').textContent = 'diğerleri';
+    showToast(`✅ Bahsin: ${amount} chip`);
+  } catch {}
+}
+
+async function doHit() {
+  try {
+    const res = await POST(`/api/tables/${currentTableId}/hit`);
+    if (res.busted) showToast('💥 Patladın! Ama kimse bilmiyor 😏');
+  } catch {}
+}
+
+async function doStand() {
+  try {
+    await POST(`/api/tables/${currentTableId}/stand`);
+    stopTurnTimer();
+  } catch {}
+}
+
+async function voteContinue(vote) {
+  try {
+    await POST(`/api/tables/${currentTableId}/continue`, { vote });
+    hideAllActions();
+    if (vote === 'leave') showToast('👋 Bir sonraki elde ayrılıyorsun.');
+    else showToast('✅ Devam ediyorsun!');
+  } catch {}
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════════════════════
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+}
+
+function goToLobby() {
+  currentTableId = null;
+  currentState   = null;
+  stopTurnTimer();
+  loadLobby();
+}
+
+function showModal() { document.getElementById('modal-overlay').classList.add('show'); }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+function showResult(msg) {
+  document.getElementById('result-title').textContent = msg.message || 'El Sonucu';
+  document.getElementById('result-players').innerHTML = (msg.playerHands || []).map(ph => `
+    <div class="result-player ${ph.winner ? 'winner' : ''}">
+      <div class="result-player-name">
+        ${ph.winner ? '🏆 ' : ''}${ph.name}${ph.busted ? ' 💥' : ''}
+      </div>
+      <div class="cards-row">
+        ${ph.cards.map(c => {
+          const red = ['♥','♦'].includes(c.suit);
+          return `<div class="playing-card ${red ? 'red' : ''}">
+            <div>${c.rank}</div><div>${c.suit}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="text-muted">${ph.busted ? 'PATLADI' : `Değer: ${ph.value}`}</div>
+    </div>
+  `).join('');
+  document.getElementById('result-overlay').classList.add('show');
+}
+
+function closeResult() { document.getElementById('result-overlay').classList.remove('show'); }
+
+function showContinueUI() {
+  closeResult();
+  hideAllActions();
+  document.getElementById('action-continue').style.display = '';
+}
+
+function showToast(msg, duration = 3000) {
+  const cont  = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className   = 'toast';
+  toast.textContent = msg;
+  cont.appendChild(toast);
+  setTimeout(() => toast.remove(), duration);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════════
+connectWS();
+loadLobby();
+</script>
+</body>
+</html>
