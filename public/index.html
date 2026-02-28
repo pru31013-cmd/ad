@@ -329,6 +329,12 @@
         
         <!-- LOBBY EKRANI -->
         <div id="lobby-screen">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="font-size: 13px; color: #888;" id="last-refresh-text">Yükleniyor...</div>
+                <button class="btn" id="refresh-btn" onclick="manualRefresh()" style="width: auto; padding: 8px 14px; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                    🔄 Yenile
+                </button>
+            </div>
             <div id="tables-list"></div>
             <button class="btn btn-primary mt-16" onclick="showCreateTable()">➕ Masa Oluştur</button>
         </div>
@@ -552,10 +558,42 @@
         }
         
         // ================== LOBBY ==================
+        let autoRefreshInterval = null;
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            autoRefreshInterval = setInterval(() => {
+                const lobbyVisible = !document.getElementById('lobby-screen').classList.contains('hidden');
+                if (lobbyVisible) loadTables();
+            }, 5000);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        async function manualRefresh() {
+            const btn = document.getElementById('refresh-btn');
+            btn.textContent = '⏳ Yükleniyor...';
+            btn.disabled = true;
+            await loadTables();
+            setTimeout(() => {
+                btn.innerHTML = '🔄 Yenile';
+                btn.disabled = false;
+            }, 500);
+        }
+
         async function loadTables() {
             try {
                 const data = await api('GET', '/api/tables');
                 renderTables(data.tables);
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const el = document.getElementById('last-refresh-text');
+                if (el) el.textContent = `🕐 Son yenileme: ${timeStr}`;
             } catch (error) {
                 document.getElementById('tables-list').innerHTML = '<div class="text-center">❌ Yüklenemedi</div>';
             }
@@ -658,6 +696,7 @@
         
         // ================== BEKLEME ODASI ==================
         function showWaitingRoom(data) {
+            stopAutoRefresh();
             hideAllScreens();
             document.getElementById('waiting-screen').classList.remove('hidden');
             document.getElementById('waiting-table-name').textContent = data.tableName;
@@ -825,6 +864,7 @@
             currentTableId = null;
             stopTimer();
             loadTables();
+            startAutoRefresh();
         }
         
         // ================== MODAL ==================
@@ -887,3 +927,4 @@
     </script>
 </body>
 </html>
+
