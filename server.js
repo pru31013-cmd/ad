@@ -508,54 +508,32 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// AUTH MIDDLEWARE - GÜNCELLENMİŞ VERSİYON
+// AUTH MIDDLEWARE
 function authMiddleware(req, res, next) {
-  console.log('🔐 Auth middleware çalıştı');
-  console.log('📥 Headers:', req.headers);
-  
-  // GELİŞTİRME MODUNDA HER ZAMAN TEST KULLANICISI
   if (IS_DEV) {
-    console.log('🔓 Geliştirme modu - test kullanıcısı oluşturuluyor');
-    
-    // Header'dan ID al veya rastgele oluştur
     let userId = req.headers['x-dev-user-id'];
-    if (!userId) {
-      userId = Math.floor(Math.random() * 10000).toString();
-      console.log('🎲 Rastgele kullanıcı ID:', userId);
-    }
-    
+    if (!userId) userId = Math.floor(Math.random() * 10000).toString();
     const tgUser = {
       id: userId,
       first_name: req.headers['x-dev-name'] || 'TestUser',
       username: req.headers['x-dev-username'] || 'testuser',
     };
-    
     q.ensureUser(tgUser);
     req.tgUser = tgUser;
-    console.log('✅ Test kullanıcısı hazır:', tgUser);
     return next();
   }
 
-  // PRODUCTION - GERÇEK TELEGRAM KONTROLÜ
   const initData = req.headers['x-telegram-init-data'];
-  if (!initData) {
-    console.log('❌ initData eksik');
-    return res.status(401).json({ error: 'initData eksik' });
-  }
+  if (!initData) return res.status(401).json({ error: 'initData eksik' });
 
   const user = verifyInitData(initData);
-  if (!user) {
-    console.log('❌ Geçersiz initData');
-    return res.status(403).json({ error: 'Geçersiz initData' });
-  }
+  if (!user) return res.status(403).json({ error: 'Geçersiz initData' });
 
   q.ensureUser(user);
   req.tgUser = user;
-  console.log('✅ Gerçek kullanıcı:', user.id);
   next();
 }
 
-// API'lere auth middleware'i uygula
 app.use('/api', authMiddleware);
 
 // API ENDPOINTS
@@ -574,7 +552,6 @@ app.get('/api/tables', (req, res) => {
     `).all().map(t => ({ ...t, password: !!t.password }));
     res.json({ tables });
   } catch (error) {
-    console.log('❌ Tablo listesi hatası:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -696,7 +673,7 @@ app.get('*', (req, res) => {
 // WEBSOCKET
 wss.on('connection', (ws, req) => {
   console.log('🔌 Yeni WebSocket bağlantısı');
-  
+
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const initData = url.searchParams.get('initData');
@@ -743,8 +720,6 @@ wss.on('connection', (ws, req) => {
           if (ph) db.prepare('UPDATE player_hands SET stood = 1, busted = 1 WHERE id = ?').run(ph.id);
         }
         state.currentTurnIndex++;
-        broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.`
-          // WEBSOCKET (DEVAM)
         broadcastToTable(tableId, { type: 'NOTIFY', message: `🔌 ${q.displayName(tid)} bağlantısı kesildi, eli kaybetti.` });
         scheduleNextTurn(tableId);
       }
